@@ -29,8 +29,7 @@ invalid_pages_dir = os.path.join(current_dir, 'fora_do_limite_paginas')
 
 # Garante a existência apenas da pasta de nomes inválidos
 os.makedirs(invalid_name_dir, exist_ok=True)
-# Flag para criar 'fora_do_limite_paginas/' apenas se necessário
-pages_folder_created = False
+pages_folder_created = False  # Flag para criar 'fora_do_limite_paginas/' apenas se necessário
 
 # Loop principal
 for filename in os.listdir(current_dir):
@@ -77,8 +76,7 @@ for filename in os.listdir(current_dir):
             continue
 
         if num_pages <= 1 or num_pages > 12:
-            print(
-                f"❌ '{filename}' tem {num_pages} páginas (limite permitido: 2 a 12).")
+            print(f"❌ '{filename}' tem {num_pages} páginas (limite permitido: 2 a 12).")
             if not pages_folder_created:
                 os.makedirs(invalid_pages_dir, exist_ok=True)
                 pages_folder_created = True
