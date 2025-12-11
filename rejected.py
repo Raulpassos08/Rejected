@@ -21,7 +21,8 @@ valid_patterns = [
     fr'^\d{{8}}-C\w{{10}}-{valid_date}[-_]\d{{5}}$'
 ]
 
-date_extract_pattern = re.compile(r'20\d{6}')
+# Extrai AAAAMMDD (20250131) OU DDMMAAAA (31012025)
+date_extract_pattern = re.compile(r'(20\d{6}|\d{2}\d{2}20\d{2})')
 
 # --- Diretórios de destino ---
 current_dir = os.getcwd()
