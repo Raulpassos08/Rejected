@@ -4,11 +4,10 @@ import shutil
 from datetime import datetime
 from PyPDF2 import PdfReader
 
-# Regex para data válida em aaaammdd ou ddmmaaaa
+# --- Configuração de padrões ---
 valid_date = r'(20\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])|' \
              r'(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])20\d{2})'
 
-# Padrões válidos com data sintaticamente correta
 valid_patterns = [
     fr'^BR0\d{{8}}-BR-H-6S11-1-{valid_date}[-_]\d{{4}}$',
     fr'^BR0\d{{8}}-BR-H-6S11-1-{valid_date}[-_]\d{{5}}$',
@@ -22,19 +21,22 @@ valid_patterns = [
     fr'^\d{{8}}-C\w{{10}}-{valid_date}[-_]\d{{5}}$'
 ]
 
-# Extrai qualquer sequência de 8 números começando com 20
 date_extract_pattern = re.compile(r'20\d{6}')
 
-# Diretórios principais
+# --- Diretórios de destino ---
 current_dir = os.getcwd()
 invalid_name_dir = os.path.join(current_dir, 'fora_do_padrao')
 invalid_pages_dir = os.path.join(current_dir, 'fora_do_limite_paginas')
+non_pdf_dir = os.path.join(current_dir, 'fora_do_formato')
 
-# Criados quando necessários
+# Cria pastas necessárias (se forem usadas depois)
 os.makedirs(invalid_name_dir, exist_ok=True)
-pages_folder_created = False
+# invalid_pages_dir e non_pdf_dir serão criadas apenas quando necessário
 
-# Função para validar data nos 2 formatos
+pages_folder_created = False
+non_pdf_folder_created = False
+
+# --- Auxiliares ---
 
 
 def validar_data(data_str):
@@ -49,24 +51,62 @@ def validar_data(data_str):
     return False
 
 
-# Loop principal
-for filename in os.listdir(current_dir):
+def is_executable_file(path):
+    """
+    Detecta executáveis:
+    - No Windows: verifica extensão comum de executáveis/script (.exe, .bat, .msi, .cmd, .com, .ps1, .jar, .scr)
+    - Em Unix: verifica se o arquivo tem bit de execução.
+    """
+    if not os.path.isfile(path):
+        return False
 
-    filepath = os.path.join(current_dir, filename)
+    # Extensões consideradas executáveis no Windows
+    executable_exts = {
+        '.exe', '.bat', '.msi', '.com', '.cmd', '.ps1', '.scr', '.jar'
+    }
+    _, ext = os.path.splitext(path)
+    ext = ext.lower()
+    if os.name == 'nt':
+        return ext in executable_exts
+    else:
+        # Em sistemas tipo Unix, checar bit executável
+        try:
+            return os.access(path, os.X_OK)
+        except Exception:
+            return False
 
-    # Ignorar pastas e não-PDF sem mover
-    if not os.path.isfile(filepath):
+
+# --- Loop principal ---
+for name in os.listdir(current_dir):
+    path = os.path.join(current_dir, name)
+
+    # 1) Se for diretório: não mexer
+    if os.path.isdir(path):
+        # opcional: print(f"⏸️ Ignorado (diretório): {name}")
         continue
 
-    if not filename.lower().endswith('.pdf'):
-        print(f"⏭️ Ignorado (não é PDF): {filename}")
+    # 2) Se for arquivo executável (não mexer)
+    if is_executable_file(path):
+        # opcional: print(f"⏸️ Ignorado (executável): {name}")
         continue
 
-    # A partir daqui, é PDF válido para análise
-    name_without_ext = os.path.splitext(filename)[0]
-    nome_valido = any(re.fullmatch(pattern, name_without_ext)
-                      for pattern in valid_patterns)
+    # 3) Se não for PDF (arquivo comum não-executável): mover para 'fora_do_formato'
+    if not name.lower().endswith('.pdf'):
+        if not non_pdf_folder_created:
+            os.makedirs(non_pdf_dir, exist_ok=True)
+            non_pdf_folder_created = True
+        try:
+            destino = os.path.join(non_pdf_dir, name)
+            shutil.move(path, destino)
+            print(f"🔁 Movido (não-PDF): {name} -> {destino}")
+        except Exception as erro:
+            print(f"❌ Erro ao mover não-PDF '{name}': {erro}")
+        continue
 
+    # 4) Se chegou aqui: é arquivo PDF → validar nome/data/páginas
+    name_without_ext = os.path.splitext(name)[0]
+    nome_valido = any(re.fullmatch(pat, name_without_ext)
+                      for pat in valid_patterns)
     data_valida = False
 
     if nome_valido:
@@ -75,41 +115,47 @@ for filename in os.listdir(current_dir):
             if validar_data(match.group(0)):
                 data_valida = True
             else:
-                print(f"❌ Data inválida no nome: {filename}")
+                print(f"❌ Data inválida no nome: {name}")
         else:
-            print(f"❌ Data não encontrada no nome: {filename}")
+            print(f"❌ Data não encontrada no nome: {name}")
     else:
-        print(f"❌ Nome inválido: {filename}")
+        print(f"❌ Nome inválido: {name}")
 
-    # Nome ou data inválida → mover
     if not nome_valido or not data_valida:
         try:
-            destino = os.path.join(invalid_name_dir, filename)
-            shutil.move(filepath, destino)
-            print(f"🔁 Movido para: {destino}\n")
+            destino = os.path.join(invalid_name_dir, name)
+            shutil.move(path, destino)
+            print(f"🔁 Movido (nome/data inválidos): {name} -> {destino}")
         except Exception as erro:
-            print(f"❌ Erro ao mover '{filename}': {erro}\n")
+            print(f"❌ Erro ao mover '{name}': {erro}")
         continue
 
-    # Verifica páginas
+    # Ler PDF e contar páginas
     try:
-        reader = PdfReader(filepath)
+        reader = PdfReader(path)
         num_pages = len(reader.pages)
     except Exception as e:
-        print(f"⚠️ Erro ao ler '{filename}': {e}")
-        destino = os.path.join(invalid_name_dir, filename)
-        shutil.move(filepath, destino)
+        print(f"⚠️ Erro ao ler '{name}': {e}")
+        try:
+            destino = os.path.join(invalid_name_dir, name)
+            shutil.move(path, destino)
+            print(f"🔁 Movido (erro leitura): {name} -> {destino}")
+        except Exception as err2:
+            print(f"❌ Erro ao mover após falha de leitura '{name}': {err2}")
         continue
 
     if num_pages <= 1 or num_pages > 12:
-        print(f"❌ '{filename}' tem {num_pages} páginas (limite: 2 a 12).")
+        print(f"❌ '{name}' tem {num_pages} páginas (limite: 2 a 12).")
         if not pages_folder_created:
             os.makedirs(invalid_pages_dir, exist_ok=True)
             pages_folder_created = True
-        destino = os.path.join(invalid_pages_dir, filename)
-        shutil.move(filepath, destino)
-        print(f"🔁 Movido para: {destino}\n")
+        try:
+            destino = os.path.join(invalid_pages_dir, name)
+            shutil.move(path, destino)
+            print(f"🔁 Movido (páginas fora do limite): {name} -> {destino}")
+        except Exception as erro:
+            print(f"❌ Erro ao mover '{name}': {erro}")
     else:
-        print(f"✅ '{filename}' está OK ({num_pages} páginas).\n")
+        print(f"✅ '{name}' está OK ({num_pages} páginas).")
 
 print("✅ Processo concluído.")
